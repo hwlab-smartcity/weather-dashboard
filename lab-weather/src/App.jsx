@@ -15,12 +15,12 @@ export default function App() {
     try {
       const url = `https://api.open-meteo.com/v1/forecast?latitude=${LATITUDE}&longitude=${LONGITUDE}&current=temperature_2m,relative_humidity_2m,precipitation,weather_code&hourly=precipitation_probability,precipitation&timezone=auto`;
       const response = await fetch(url);
-      
+
       if (!response.ok) throw new Error('Network response was not ok');
-      
+
       const data = await response.json();
       setWeatherData(data);
-      
+
       const now = new Date();
       setLastUpdated(now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
       setError(null);
@@ -82,7 +82,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans p-6 overflow-hidden">
-      
+
       {/* Header */}
       <div className="flex justify-between items-center text-slate-400 text-2xl font-semibold tracking-wider pb-6 border-b border-slate-800">
         <div>LAB WEATHER MONITOR</div>
@@ -96,15 +96,15 @@ export default function App() {
       <div className="flex-1 flex flex-col items-center justify-center py-12">
         <div className={`transition-colors duration-1000 flex flex-col items-center justify-center p-16 rounded-3xl w-full max-w-6xl shadow-2xl ${isRaining ? 'bg-blue-900/40 border-4 border-blue-500/50' : 'bg-emerald-900/20 border-4 border-emerald-500/30'}`}>
           <condition.icon size={180} className={`mb-8 ${isRaining ? 'text-blue-400' : 'text-emerald-400'}`} />
-          
+
           <h1 className={`text-8xl md:text-[140px] font-black tracking-tighter leading-none mb-6 ${isRaining ? 'text-blue-100' : 'text-emerald-100'}`}>
             {condition.text}
           </h1>
-          
+
           {isRaining ? (
             <div className="text-5xl md:text-7xl font-bold text-blue-300 bg-blue-950/50 px-12 py-6 rounded-full mt-4 flex items-center gap-4">
-               <Droplets size={60} />
-               {current.precipitation} mm/h
+              <Droplets size={60} />
+              {current.precipitation} mm/h
             </div>
           ) : (
             <div className="text-5xl md:text-7xl font-bold text-emerald-400/80 bg-emerald-950/50 px-12 py-6 rounded-full mt-4">
@@ -123,7 +123,7 @@ export default function App() {
           </div>
           <Thermometer size={80} className="text-orange-400 opacity-50" />
         </div>
-        
+
         <div className="bg-slate-900 rounded-2xl p-8 flex items-center justify-between border border-slate-800">
           <div>
             <div className="text-slate-400 text-2xl uppercase tracking-widest font-semibold mb-2">Humidity</div>
@@ -138,11 +138,11 @@ export default function App() {
         {[1, 2, 3].map((offset) => {
           const forecastIdx = currentHourIndex + offset;
           // Protect against out-of-bounds array errors near the end of the 7-day forecast
-          if (forecastIdx < 0 || forecastIdx >= hourly.time.length) return null; 
-          
+          if (forecastIdx < 0 || forecastIdx >= hourly.time.length) return null;
+
           const prob = hourly.precipitation_probability[forecastIdx];
           const amount = hourly.precipitation[forecastIdx];
-          
+
           // Formatting the hour nicely (e.g., "14:00")
           const timeString = new Date(hourly.time[forecastIdx]).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
