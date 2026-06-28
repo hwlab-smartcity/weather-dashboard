@@ -3,9 +3,10 @@ import mqtt from 'mqtt';
 import { AudioLines, Radio, WifiOff } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
-const FALLBACK_BROKER_URL = '192.168.88.253:1883';
+const FALLBACK_BROKER_URL = 'ws://192.168.88.253:8083/mqtt';
 const FALLBACK_TOPICS = ['vibe/sound/board1', 'vibe/sound/board2', 'vibe/sound/board3'];
 const FALLBACK_STATUS_TOPIC = 'vibe/status/504';
+const FALLBACK_CLIENT_ID_PREFIX = 'vibe_web';
 
 const FALLBACK_THRESHOLD_MEETING = 90;
 const FALLBACK_THRESHOLD_STUDY = 100;
@@ -56,8 +57,15 @@ function parseThresholdValue(rawText) {
 
 function normalizeBrokerUrl(url) {
     if (!url) return url;
-    if (url.startsWith('ws://') || url.startsWith('wss://')) return url;
-    return `ws://${url}`;
+    const normalized = url.trim();
+    if (normalized.startsWith('ws://') || normalized.startsWith('wss://')) return normalized;
+    if (normalized.startsWith('ws:')) {
+        return `ws://${normalized.slice(3).replace(/^\/\//, '')}`;
+    }
+    if (normalized.startsWith('wss:')) {
+        return `wss://${normalized.slice(4).replace(/^\/\//, '')}`;
+    }
+    return `ws://${normalized}`;
 }
 
 function parseEnvNumber(value, fallback) {
@@ -65,10 +73,21 @@ function parseEnvNumber(value, fallback) {
     return Number.isNaN(parsed) ? fallback : parsed;
 }
 
+function createClientId(prefix) {
+    const safePrefix = (prefix || FALLBACK_CLIENT_ID_PREFIX).trim() || FALLBACK_CLIENT_ID_PREFIX;
+    const randomPart = `${Date.now()}_${Math.random().toString(16).slice(2, 10)}`;
+    return `${safePrefix}_${randomPart}`;
+}
+
 export default function VibeControl() {
     const brokerUrl = import.meta.env.VITE_MQTT_BROKER_URL || FALLBACK_BROKER_URL;
     const normalizedBrokerUrl = normalizeBrokerUrl(brokerUrl);
     const statusTopic = import.meta.env.VITE_MQTT_STATUS_TOPIC || FALLBACK_STATUS_TOPIC;
+    const mqttUser = import.meta.env.VITE_MQTT_USER?.trim() || '';
+    const mqttPass = import.meta.env.VITE_MQTT_PASS?.trim() || '';
+    const hasMqttCredentials = mqttUser.length > 0 && mqttPass.length > 0;
+    const clientIdPrefix = import.meta.env.VITE_MQTT_CLIENT_ID_PREFIX || FALLBACK_CLIENT_ID_PREFIX;
+    const mqttClientId = useMemo(() => createClientId(clientIdPrefix), [clientIdPrefix]);
     const topics = useMemo(
         () => [
             import.meta.env.VITE_MQTT_TOPIC_1 || FALLBACK_TOPICS[0],
@@ -98,25 +117,51 @@ export default function VibeControl() {
         }, {}),
     );
 
+
     useEffect(() => {
-        const client = mqtt.connect(normalizedBrokerUrl, {
-            reconnectPeriod: 3000,
-            connectTimeout: 10000,
+        if (!hasMqttCredentials) {
+            console.error('Missing MQTT credentials in env. Set VITE_MQTT_USER and VITE_MQTT_PASS.');
+            setStatus('error');
+            return;
+        }
+
+        const connectOptions = {
+            protocol: 'ws',
+            reconnectPeriod: 1000,
+            connectTimeout: 30 * 1000,
+            keepalive: 60,
             clean: true,
-        });
+            clientId: mqttClientId,
+            username: mqttUser,
+            password: mqttPass,
+        };
+
+        console.log('Connecting to EMQX:', normalizedBrokerUrl, 'clientId:', mqttClientId);
+        const client = mqtt.connect(normalizedBrokerUrl, connectOptions);
 
         client.on('connect', () => {
+            console.log('Connected to EMQX');
             setStatus('connected');
             client.subscribe([...topics, statusTopic], { qos: 0 }, (err) => {
                 if (err) {
+                    console.error('MQTT subscribe error:', err);
                     setStatus('error');
                 }
             });
         });
 
-        client.on('reconnect', () => setStatus('reconnecting'));
-        client.on('close', () => setStatus('disconnected'));
-        client.on('error', () => setStatus('error'));
+        client.on('reconnect', () => {
+            console.log('Reconnecting to EMQX...');
+            setStatus('reconnecting');
+        });
+        client.on('close', () => {
+            console.log('EMQX connection closed');
+            setStatus('disconnected');
+        });
+        client.on('error', (err) => {
+            console.error('MQTT connection error:', err);
+            setStatus('error');
+        });
 
         client.on('message', (topic, payload) => {
             const raw = payload.toString('utf-8').trim();
@@ -143,7 +188,7 @@ export default function VibeControl() {
         return () => {
             client.end(true);
         };
-    }, [normalizedBrokerUrl, statusTopic, topics]);
+    }, [hasMqttCredentials, mqttClientId, mqttPass, mqttUser, normalizedBrokerUrl, statusTopic, topics]);
 
     const statusTone =
         status === 'connected'
@@ -237,7 +282,6 @@ export default function VibeControl() {
                                             })
                                             : 'waiting for message'}
                                     </div>
-                                    <div className="mt-1 truncate text-xs text-slate-500">Raw: {item.raw || '-'}</div>
                                 </div>
                             </article>
                         );
