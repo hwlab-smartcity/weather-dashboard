@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Cloud, CloudRain, Sun, Droplets, Thermometer, Clock, AlertTriangle, CloudLightning, Snowflake } from 'lucide-react';
+import { Cloud, CloudRain, Sun, Moon, Droplets, Thermometer, Clock, AlertTriangle, CloudLightning, Snowflake } from 'lucide-react';
 
 export default function App() {
   const [weatherData, setWeatherData] = useState(null);
@@ -13,7 +13,7 @@ export default function App() {
 
   const fetchWeather = async () => {
     try {
-      const url = `https://api.open-meteo.com/v1/forecast?latitude=${LATITUDE}&longitude=${LONGITUDE}&current=temperature_2m,relative_humidity_2m,precipitation,weather_code&hourly=precipitation_probability,precipitation&timezone=auto`;
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${LATITUDE}&longitude=${LONGITUDE}&current=temperature_2m,relative_humidity_2m,precipitation,rain,showers,snowfall,cloud_cover,is_day&hourly=precipitation_probability,precipitation&timezone=auto`;
       const response = await fetch(url);
 
       if (!response.ok) throw new Error('Network response was not ok');
@@ -40,17 +40,21 @@ export default function App() {
     return () => clearInterval(intervalId);
   }, []);
 
-  const getWeatherInterpretation = (code) => {
-    // WMO Weather interpretation codes
-    if (code === 0) return { text: 'CLEAR SKY', icon: Sun, type: 'clear' };
-    if (code >= 1 && code <= 3) return { text: 'PARTLY CLOUDY', icon: Cloud, type: 'clear' };
-    if (code === 45 || code === 48) return { text: 'FOGGY', icon: Cloud, type: 'clear' };
-    if (code >= 51 && code <= 55) return { text: 'DRIZZLE', icon: CloudRain, type: 'rain' };
-    if (code >= 61 && code <= 65) return { text: 'RAINING', icon: CloudRain, type: 'rain' };
-    if (code >= 71 && code <= 77) return { text: 'SNOWING', icon: Snowflake, type: 'snow' };
-    if (code >= 80 && code <= 82) return { text: 'RAIN SHOWERS', icon: CloudRain, type: 'rain' };
-    if (code >= 95 && code <= 99) return { text: 'THUNDERSTORM', icon: CloudLightning, type: 'storm' };
-    return { text: 'UNKNOWN', icon: AlertTriangle, type: 'clear' };
+  const getWeatherInterpretation = (currentData) => {
+    // Evaluate exact measurements instead of relying on WMO code
+    if (currentData.snowfall > 0) return { text: 'SNOWING', icon: Snowflake, type: 'snow' };
+    if (currentData.showers > 0.5) return { text: 'SHOWERS', icon: CloudRain, type: 'rain' };
+    if (currentData.rain > 0.5) return { text: 'RAINING', icon: CloudRain, type: 'rain' };
+    if (currentData.precipitation > 0.5) return { text: 'DRIZZLE', icon: CloudRain, type: 'rain' };
+    
+    // If it's dry, check the cloud cover percentage
+    if (currentData.cloud_cover >= 70) return { text: 'CLOUDY', icon: Cloud, type: 'clear' };
+    if (currentData.cloud_cover >= 30) return { text: 'PARTLY CLOUDY', icon: Cloud, type: 'clear' };
+    
+    // If it's clear, check if it is day or night
+    if (currentData.is_day === 0) return { text: 'CLEAR NIGHT', icon: Moon, type: 'clear' };
+    
+    return { text: 'CLEAR SKY', icon: Sun, type: 'clear' };
   };
 
   if (loading) {
@@ -73,7 +77,7 @@ export default function App() {
   }
 
   const { current, hourly } = weatherData;
-  const condition = getWeatherInterpretation(current.weather_code);
+  const condition = getWeatherInterpretation(current);
   const isRaining = current.precipitation > 0 || ['rain', 'storm'].includes(condition.type);
 
   // Determine current hour index to fetch upcoming 3 hours
