@@ -88,6 +88,7 @@ export default function VibeControl() {
     const hasMqttCredentials = mqttUser.length > 0 && mqttPass.length > 0;
     const clientIdPrefix = import.meta.env.VITE_MQTT_CLIENT_ID_PREFIX || FALLBACK_CLIENT_ID_PREFIX;
     const mqttClientId = useMemo(() => createClientId(clientIdPrefix), [clientIdPrefix]);
+
     const topics = useMemo(
         () => [
             import.meta.env.VITE_MQTT_TOPIC_1 || FALLBACK_TOPICS[0],
@@ -96,6 +97,7 @@ export default function VibeControl() {
         ],
         [],
     );
+
     const thresholdPresets = useMemo(
         () => ({
             meeting: parseEnvNumber(import.meta.env.VITE_THRESHOLD_MEETING, FALLBACK_THRESHOLD_MEETING),
@@ -106,6 +108,7 @@ export default function VibeControl() {
     );
 
     const [status, setStatus] = useState('connecting');
+    const [currentTime, setCurrentTime] = useState(Date.now());
     const [thresholdInfo, setThresholdInfo] = useState({
         value: null,
         updatedAt: null,
@@ -117,6 +120,11 @@ export default function VibeControl() {
         }, {}),
     );
 
+    // นาฬิกาเพื่อคอยเช็คสถานะ Offline ของไมค์ (อัปเดตทุก 1 วินาที)
+    useEffect(() => {
+        const timer = setInterval(() => setCurrentTime(Date.now()), 1000);
+        return () => clearInterval(timer);
+    }, []);
 
     useEffect(() => {
         if (!hasMqttCredentials) {
@@ -136,11 +144,9 @@ export default function VibeControl() {
             password: mqttPass,
         };
 
-        console.log('Connecting to EMQX:', normalizedBrokerUrl, 'clientId:', mqttClientId);
         const client = mqtt.connect(normalizedBrokerUrl, connectOptions);
 
         client.on('connect', () => {
-            console.log('Connected to EMQX');
             setStatus('connected');
             client.subscribe([...topics, statusTopic], { qos: 0 }, (err) => {
                 if (err) {
@@ -150,14 +156,8 @@ export default function VibeControl() {
             });
         });
 
-        client.on('reconnect', () => {
-            console.log('Reconnecting to EMQX...');
-            setStatus('reconnecting');
-        });
-        client.on('close', () => {
-            console.log('EMQX connection closed');
-            setStatus('disconnected');
-        });
+        client.on('reconnect', () => setStatus('reconnecting'));
+        client.on('close', () => setStatus('disconnected'));
         client.on('error', (err) => {
             console.error('MQTT connection error:', err);
             setStatus('error');
@@ -194,10 +194,25 @@ export default function VibeControl() {
         status === 'connected'
             ? 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30'
             : 'text-amber-300 bg-amber-500/10 border-amber-500/30';
-    let thresholdLabel = 'ไม่ตรงกับ preset';
-    if (thresholdInfo.value === thresholdPresets.meeting) thresholdLabel = 'ประชุม';
-    if (thresholdInfo.value === thresholdPresets.study) thresholdLabel = 'เรียน';
-    if (thresholdInfo.value === thresholdPresets.relax) thresholdLabel = 'relex';
+
+    // เช็คค่า Threshold เพื่อกำหนดสีและข้อความ
+    let thresholdLabel = 'Custom';
+    let modeColorStyle = 'border-cyan-500/30 bg-cyan-500/10 text-cyan-300';
+    let modeSubTextStyle = 'text-cyan-100';
+
+    if (thresholdInfo.value === thresholdPresets.meeting) {
+        thresholdLabel = 'ประชุม';
+        modeColorStyle = 'border-red-500/30 bg-red-500/10 text-red-400';
+        modeSubTextStyle = 'text-red-100';
+    } else if (thresholdInfo.value === thresholdPresets.study) {
+        thresholdLabel = 'เรียน';
+        modeColorStyle = 'border-yellow-500/30 bg-yellow-500/10 text-yellow-400';
+        modeSubTextStyle = 'text-yellow-100';
+    } else if (thresholdInfo.value === thresholdPresets.relax) {
+        thresholdLabel = 'พัก';
+        modeColorStyle = 'border-green-500/30 bg-green-500/10 text-green-400';
+        modeSubTextStyle = 'text-green-100';
+    }
 
     return (
         <div className="min-h-screen bg-slate-950 text-slate-100 px-6 py-8 md:px-10">
@@ -224,16 +239,18 @@ export default function VibeControl() {
                     </div>
                 </header>
 
-                <section className="mb-6 rounded-3xl border border-cyan-500/30 bg-cyan-500/10 p-6 md:p-8">
-                    <div className="text-xs uppercase tracking-[0.24em] text-cyan-200/80">Threshold Status</div>
+                <section className={`mb-6 rounded-3xl border p-6 md:p-8 ${modeColorStyle}`}>
+                    <div className="text-xs uppercase tracking-[0.24em] opacity-80">Current Mode</div>
                     <div className="mt-3 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
                         <div>
-                            <div className="text-6xl md:text-8xl font-black text-cyan-300 leading-none">
-                                {thresholdInfo.value ?? '-'}
+                            <div className="text-6xl md:text-8xl font-black leading-none">
+                                {thresholdLabel}
                             </div>
-                            <div className="mt-2 text-2xl md:text-3xl font-bold text-cyan-100">โหมด: {thresholdLabel}</div>
+                            <div className={`mt-2 text-2xl md:text-3xl font-bold ${modeSubTextStyle}`}>
+                                Threshold: {thresholdInfo.value ?? '-'} dB
+                            </div>
                         </div>
-                        <div className="text-sm text-cyan-100/80">
+                        <div className="text-sm opacity-80">
                             <div className="mt-1">
                                 Updated:{' '}
                                 {thresholdInfo.updatedAt
@@ -247,10 +264,10 @@ export default function VibeControl() {
                         </div>
                     </div>
 
-                    <div className="mt-5 grid grid-cols-1 gap-2 text-sm text-cyan-100/90 md:grid-cols-3">
-                        <div className="rounded-xl border border-cyan-400/20 bg-slate-900/40 p-3"><span className="font-bold">{thresholdPresets.meeting}</span> = ประชุม</div>
-                        <div className="rounded-xl border border-cyan-400/20 bg-slate-900/40 p-3"><span className="font-bold">{thresholdPresets.study}</span> = เรียน</div>
-                        <div className="rounded-xl border border-cyan-400/20 bg-slate-900/40 p-3"><span className="font-bold">{thresholdPresets.relax}</span> = relex</div>
+                    <div className="mt-5 grid grid-cols-1 gap-2 text-sm md:grid-cols-3">
+                        <div className="rounded-xl border border-current/20 bg-slate-900/40 p-3"><span className="font-bold">{thresholdPresets.meeting} dB</span> = ประชุม</div>
+                        <div className="rounded-xl border border-current/20 bg-slate-900/40 p-3"><span className="font-bold">{thresholdPresets.study} dB</span> = เรียน</div>
+                        <div className="rounded-xl border border-current/20 bg-slate-900/40 p-3"><span className="font-bold">{thresholdPresets.relax} dB</span> = พัก</div>
                     </div>
                 </section>
 
@@ -258,18 +275,37 @@ export default function VibeControl() {
                     {topics.map((topic, index) => {
                         const item = messages[topic] || { value: '-', raw: '', updatedAt: null };
 
+                        // คำนวณสถานะต่างๆ ของไมค์
+                        const isWaiting = !item.updatedAt;
+                        const isOffline = !isWaiting && (currentTime - item.updatedAt.getTime() > 3000);
+                        const micValueNum = Number(item.value);
+                        const isOverThreshold = !isNaN(micValueNum) && thresholdInfo.value !== null && micValueNum > thresholdInfo.value;
+
+                        // กำหนดสีของค่าไมค์
+                        let valueColor = 'text-cyan-300';
+                        if (isOffline) {
+                            valueColor = 'text-slate-500';
+                        } else if (isOverThreshold) {
+                            valueColor = 'text-red-500';
+                        }
+
                         return (
                             <article
                                 key={topic}
-                                className="rounded-3xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-900/40 p-6 shadow-xl"
+                                className={`rounded-3xl border ${isOverThreshold && !isOffline ? 'border-red-500/50' : 'border-slate-800'} bg-gradient-to-br from-slate-900 to-slate-900/40 p-6 shadow-xl transition-colors`}
                             >
                                 <div className="mb-4 flex items-center justify-between">
                                     <h2 className="text-lg font-bold tracking-wide text-slate-200">MIC {index + 1}</h2>
-                                    <AudioLines className="text-cyan-300" size={22} />
+                                    <AudioLines className={isOverThreshold && !isOffline ? 'text-red-500' : 'text-cyan-300'} size={22} />
                                 </div>
 
-
-                                <div className="mt-5 text-5xl font-black text-cyan-300">{item.value}</div>
+                                <div className={`mt-5 text-5xl font-black ${valueColor}`}>
+                                    {isOffline ? (
+                                        'OFFLINE'
+                                    ) : (
+                                        item.value !== '-' ? `${item.value} dB` : '-'
+                                    )}
+                                </div>
 
                                 <div className="mt-5 text-sm text-slate-400">
                                     <div>
@@ -287,7 +323,6 @@ export default function VibeControl() {
                         );
                     })}
                 </div>
-
             </div>
         </div>
     );
