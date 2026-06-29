@@ -16,7 +16,7 @@ createRoot(document.getElementById('root')).render(
     <BrowserRouter>
       <GlobalMqttRedirector />
       <Routes>
-        <Route path="/" element={<App />} />
+        <Route path="weather/" element={<App />} />
         <Route path="/vibe" element={<VibeControl />} />
       </Routes>
     </BrowserRouter>
