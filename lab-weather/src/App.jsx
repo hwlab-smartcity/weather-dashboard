@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import mqtt from 'mqtt';
 import { Cloud, CloudRain, Sun, Droplets, Thermometer, Clock, AlertTriangle, CloudLightning, Snowflake } from 'lucide-react';
 
 export default function App() {
@@ -10,6 +11,10 @@ export default function App() {
   // Defaulting to Bangkok Coordinates, change these to your lab's location
   const LATITUDE = 13.7563;
   const LONGITUDE = 100.5018;
+  // --- MQTT STATE ---
+  // We track the live rain rate coming from your local sensor.
+  // We initialize it as 'null' so we know if we haven't received data yet.
+  const [localRainRate, setLocalRainRate] = useState(null); 
 
   const fetchWeather = async () => {
     try {
@@ -32,25 +37,56 @@ export default function App() {
   };
 
   useEffect(() => {
-    // Fetch immediately on mount
+    // 1. Fetch API Weather Immediately & Set Interval
     fetchWeather();
-
-    // Set up auto-refresh every 5 minutes (300,000 milliseconds)
     const intervalId = setInterval(fetchWeather, 300000);
-    return () => clearInterval(intervalId);
+
+    // 2. Connect to Local MQTT Broker via WebSockets
+    // Note: We use port 9001, which we just configured for WebSockets
+    const client = mqtt.connect('ws://192.168.88.253:9001');
+
+    client.on('connect', () => {
+      console.log('Connected to Lab MQTT Broker');
+      // Subscribe to your specific hardware sensor topic
+      // CHANGE THIS TOPIC string to match whatever your sensor actually publishes!
+      client.subscribe('lab/outside/rain_rate'); 
+    });
+
+    client.on('message', (topic, message) => {
+      if (topic === 'lab/outside/rain_rate') {
+        // Convert the incoming MQTT message to a number and update state instantly
+        const rate = parseFloat(message.toString());
+        if (!isNaN(rate)) {
+          setLocalRainRate(rate);
+        }
+      }
+    });
+
+    // Cleanup when component unmounts
+    return () => {
+      clearInterval(intervalId);
+      client.end();
+    };
   }, []);
 
-  const getWeatherInterpretation = (code) => {
-    // WMO Weather interpretation codes
-    if (code === 0) return { text: 'CLEAR SKY', icon: Sun, type: 'clear' };
-    if (code >= 1 && code <= 3) return { text: 'PARTLY CLOUDY', icon: Cloud, type: 'clear' };
-    if (code === 45 || code === 48) return { text: 'FOGGY', icon: Cloud, type: 'clear' };
-    if (code >= 51 && code <= 55) return { text: 'DRIZZLE', icon: CloudRain, type: 'rain' };
-    if (code >= 61 && code <= 65) return { text: 'RAINING', icon: CloudRain, type: 'rain' };
-    if (code >= 71 && code <= 77) return { text: 'SNOWING', icon: Snowflake, type: 'snow' };
-    if (code >= 80 && code <= 82) return { text: 'RAIN SHOWERS', icon: CloudRain, type: 'rain' };
-    if (code >= 95 && code <= 99) return { text: 'THUNDERSTORM', icon: CloudLightning, type: 'storm' };
-    return { text: 'UNKNOWN', icon: AlertTriangle, type: 'clear' };
+  const getWeatherInterpretation = (currentData, isCurrentlyRainingLocal) => {
+    // Priority 1: If the local MQTT sensor says it's raining, we force the UI to show RAIN
+    if (isCurrentlyRainingLocal) return { text: 'RAINING (LIVE)', icon: CloudRain, type: 'rain' };
+
+    // Priority 2: Fallback to the Open-Meteo API data if MQTT isn't detecting rain
+    if (currentData.snowfall > 0) return { text: 'SNOWING', icon: Snowflake, type: 'snow' };
+    if (currentData.showers > 0) return { text: 'SHOWERS', icon: CloudRain, type: 'rain' };
+    if (currentData.rain > 0) return { text: 'RAINING', icon: CloudRain, type: 'rain' };
+    if (currentData.precipitation > 0) return { text: 'DRIZZLE', icon: CloudRain, type: 'rain' };
+    
+    // If it's dry, check the cloud cover percentage
+    if (currentData.cloud_cover >= 70) return { text: 'CLOUDY', icon: Cloud, type: 'clear' };
+    if (currentData.cloud_cover >= 30) return { text: 'PARTLY CLOUDY', icon: Cloud, type: 'clear' };
+    
+    // If it's clear, check if it is day or night
+    if (currentData.is_day === 0) return { text: 'CLEAR NIGHT', icon: Moon, type: 'clear' };
+    
+    return { text: 'CLEAR SKY', icon: Sun, type: 'clear' };
   };
 
   if (loading) {
@@ -71,24 +107,43 @@ export default function App() {
       </div>
     );
   }
-
   const { current, hourly } = weatherData;
-  const condition = getWeatherInterpretation(current.weather_code);
-  const isRaining = current.precipitation > 0 || ['rain', 'storm'].includes(condition.type);
+  // --- CORE LOGIC: MQTT OVERRIDE ---
+  // If localRainRate > 0, we trust the sensor. Otherwise, we trust the API.
+  const isRainingLocally = localRainRate !== null && localRainRate > 0;
+  
+  // We pass the local rain status to the interpretation function so it can override the icon/text
+  const condition = getWeatherInterpretation(current, isRainingLocally);
+  
+  // The final boolean determining the screen color (Blue vs Green)
+  const isRaining = isRainingLocally || current.precipitation > 0 || ['rain', 'storm'].includes(condition.type);
+
+  // The final number displayed on screen (prioritize MQTT, fallback to API)
+  const displayedRainRate = localRainRate !== null ? localRainRate : current.precipitation;
 
   // Determine current hour index to fetch upcoming 3 hours
   const currentHourString = current.time.slice(0, 13) + ":00"; // format to match hourly timestamps
   const currentHourIndex = hourly.time.findIndex(t => t.startsWith(currentHourString));
 
-  return (
+ return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans p-6 overflow-hidden">
       
       {/* Header */}
       <div className="flex justify-between items-center text-slate-400 text-2xl font-semibold tracking-wider pb-6 border-b border-slate-800">
         <div>LAB WEATHER MONITOR</div>
-        <div className="flex items-center gap-2">
-          <Clock size={24} />
-          <span>UPDATED: {lastUpdated}</span>
+        <div className="flex items-center gap-6">
+          {/* MQTT Connection Status Indicator */}
+          <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-widest">
+            {localRainRate !== null ? (
+              <span className="text-emerald-500 flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div> MQTT ACTIVE</span>
+            ) : (
+              <span className="text-amber-500 flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-amber-500"></div> WAITING FOR SENSOR</span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <Clock size={24} />
+            <span>API UPDATED: {lastUpdated}</span>
+          </div>
         </div>
       </div>
 
@@ -104,7 +159,8 @@ export default function App() {
           {isRaining ? (
             <div className="text-5xl md:text-7xl font-bold text-blue-300 bg-blue-950/50 px-12 py-6 rounded-full mt-4 flex items-center gap-4">
                <Droplets size={60} />
-               {current.precipitation} mm/h
+               {displayedRainRate} mm/h
+               {isRainingLocally && <span className="text-2xl text-blue-500 ml-2">(LIVE)</span>}
             </div>
           ) : (
             <div className="text-5xl md:text-7xl font-bold text-emerald-400/80 bg-emerald-950/50 px-12 py-6 rounded-full mt-4">
@@ -114,7 +170,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* Secondary Metrics */}
+      {/* Secondary Metrics (Always from API) */}
       <div className="grid grid-cols-2 gap-8 mb-8">
         <div className="bg-slate-900 rounded-2xl p-8 flex items-center justify-between border border-slate-800">
           <div>
@@ -137,13 +193,10 @@ export default function App() {
       <div className="grid grid-cols-3 gap-8">
         {[1, 2, 3].map((offset) => {
           const forecastIdx = currentHourIndex + offset;
-          // Protect against out-of-bounds array errors near the end of the 7-day forecast
           if (forecastIdx < 0 || forecastIdx >= hourly.time.length) return null; 
           
           const prob = hourly.precipitation_probability[forecastIdx];
           const amount = hourly.precipitation[forecastIdx];
-          
-          // Formatting the hour nicely (e.g., "14:00")
           const timeString = new Date(hourly.time[forecastIdx]).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
           return (
