@@ -6,7 +6,7 @@ import App from './App.jsx'
 import VibeControl from './pages/VibeControl.jsx'
 import useVibeRedirect from './useVibeRedirect.js'
 
-function GlobalMqttRedirector() {
+export function GlobalMqttRedirector() {
   useVibeRedirect()
   return null
 }
@@ -17,7 +17,7 @@ createRoot(document.getElementById('root')).render(
       <GlobalMqttRedirector />
       <Routes>
         <Route path="weather/" element={<App />} />
-        <Route path="/vibe" element={<VibeControl />} />
+        <Route path="/dashboard-vibe" element={<VibeControl />} />
       </Routes>
     </BrowserRouter>
   </StrictMode>,

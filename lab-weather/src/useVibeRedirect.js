@@ -12,8 +12,8 @@ export default function useVibeRedirect() {
 
     useEffect(() => {
         const intervalId = setInterval(() => {
-            const isOnVibePage = currentPath.current.startsWith('/vibe');
-            navigate(isOnVibePage ? '/weather/' : '/vibe');
+            const isOnVibePage = currentPath.current.startsWith('/dashboard-vibe');
+            navigate(isOnVibePage ? '/weather/' : '/dashboard-vibe');
         }, 60000);
 
         return () => {
