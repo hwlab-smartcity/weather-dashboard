@@ -107,8 +107,8 @@ export default function VibeControl() {
         [],
     );
 
-    const [status, setStatus] = useState('connecting');
-    const [currentTime, setCurrentTime] = useState(Date.now());
+    const [status, setStatus] = useState(hasMqttCredentials ? 'connecting' : 'error');
+    const [currentTime, setCurrentTime] = useState(() => Date.now());
     const [thresholdInfo, setThresholdInfo] = useState({
         value: null,
         updatedAt: null,
@@ -129,7 +129,6 @@ export default function VibeControl() {
     useEffect(() => {
         if (!hasMqttCredentials) {
             console.error('Missing MQTT credentials in env. Set VITE_MQTT_USER and VITE_MQTT_PASS.');
-            setStatus('error');
             return;
         }
 
@@ -215,42 +214,42 @@ export default function VibeControl() {
     }
 
     return (
-        <div className="min-h-screen bg-slate-950 text-slate-100 px-6 py-8 md:px-10">
-            <div className="mx-auto max-w-6xl">
-                <header className="mb-8 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="min-h-screen w-full bg-slate-950 text-slate-100 overflow-hidden">
+            <div className="flex min-h-screen w-full flex-col gap-6 px-4 py-4 md:px-6 md:py-6 xl:px-8 xl:py-8">
+                <header className="flex flex-col gap-4 rounded-3xl border border-slate-800 bg-slate-900/40 px-5 py-5 md:flex-row md:items-center md:justify-between md:px-6 md:py-6 xl:px-8 xl:py-7">
                     <div>
-                        <h1 className="text-4xl md:text-5xl font-black tracking-tight">VIBE CONTROL</h1>
-                        <p className="mt-2 text-slate-400">
+                        <h1 className="text-5xl md:text-7xl xl:text-8xl font-black tracking-tight leading-none">VIBE CONTROL</h1>
+                        <p className="mt-3 text-base md:text-lg xl:text-xl text-slate-400">
                             Live microphone values from 3 MQTT topics
                         </p>
                     </div>
 
-                    <div className="flex items-center gap-3">
-                        <div className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold ${statusTone}`}>
-                            {status === 'connected' ? <Radio size={16} /> : <WifiOff size={16} />}
+                    <div className="flex flex-wrap items-center gap-3 md:justify-end">
+                        <div className={`inline-flex items-center gap-3 rounded-full border px-5 py-3 text-base font-semibold md:text-lg ${statusTone}`}>
+                            {status === 'connected' ? <Radio size={20} /> : <WifiOff size={20} />}
                             <span>MQTT: {status.toUpperCase()}</span>
                         </div>
                         <Link
                             to="/"
-                            className="rounded-full border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-800"
+                            className="rounded-full border border-slate-700 px-5 py-3 text-base font-semibold text-slate-200 hover:bg-slate-800 md:text-lg"
                         >
                             Back to Weather
                         </Link>
                     </div>
                 </header>
 
-                <section className={`mb-6 rounded-3xl border p-6 md:p-8 ${modeColorStyle}`}>
-                    <div className="text-xs uppercase tracking-[0.24em] opacity-80">Current Mode</div>
-                    <div className="mt-3 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                <section className={`rounded-3xl border p-6 md:p-8 xl:p-10 ${modeColorStyle}`}>
+                    <div className="text-sm uppercase tracking-[0.32em] opacity-80 md:text-base">Current Mode</div>
+                    <div className="mt-4 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
                         <div>
-                            <div className="text-6xl md:text-8xl font-black leading-none">
+                            <div className="text-7xl md:text-[8rem] xl:text-[10rem] font-black leading-none">
                                 {thresholdLabel}
                             </div>
-                            <div className={`mt-2 text-2xl md:text-3xl font-bold ${modeSubTextStyle}`}>
+                            <div className={`mt-3 text-3xl md:text-4xl xl:text-5xl font-bold ${modeSubTextStyle}`}>
                                 Threshold: {thresholdInfo.value ?? '-'} dB
                             </div>
                         </div>
-                        <div className="text-sm opacity-80">
+                        <div className="text-base md:text-lg xl:text-xl opacity-80">
                             <div className="mt-1">
                                 Updated:{' '}
                                 {thresholdInfo.updatedAt
@@ -264,14 +263,14 @@ export default function VibeControl() {
                         </div>
                     </div>
 
-                    <div className="mt-5 grid grid-cols-1 gap-2 text-sm md:grid-cols-3">
-                        <div className="rounded-xl border border-current/20 bg-slate-900/40 p-3"><span className="font-bold">{thresholdPresets.meeting} dB</span> = ประชุม</div>
-                        <div className="rounded-xl border border-current/20 bg-slate-900/40 p-3"><span className="font-bold">{thresholdPresets.study} dB</span> = เรียน</div>
-                        <div className="rounded-xl border border-current/20 bg-slate-900/40 p-3"><span className="font-bold">{thresholdPresets.relax} dB</span> = พัก</div>
+                    <div className="mt-6 grid grid-cols-1 gap-3 text-base md:grid-cols-3 xl:text-lg">
+                        <div className="rounded-2xl border border-current/20 bg-slate-900/40 p-4 md:p-5"><span className="font-bold">{thresholdPresets.meeting} dB</span> = ประชุม</div>
+                        <div className="rounded-2xl border border-current/20 bg-slate-900/40 p-4 md:p-5"><span className="font-bold">{thresholdPresets.study} dB</span> = เรียน</div>
+                        <div className="rounded-2xl border border-current/20 bg-slate-900/40 p-4 md:p-5"><span className="font-bold">{thresholdPresets.relax} dB</span> = พัก</div>
                     </div>
                 </section>
 
-                <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+                <div className="grid flex-1 min-h-0 grid-cols-1 gap-6 md:grid-cols-3">
                     {topics.map((topic, index) => {
                         const item = messages[topic] || { value: '-', raw: '', updatedAt: null };
 
@@ -292,14 +291,14 @@ export default function VibeControl() {
                         return (
                             <article
                                 key={topic}
-                                className={`rounded-3xl border ${isOverThreshold && !isOffline ? 'border-red-500/50' : 'border-slate-800'} bg-gradient-to-br from-slate-900 to-slate-900/40 p-6 shadow-xl transition-colors`}
+                                className={`flex h-full flex-col rounded-3xl border ${isOverThreshold && !isOffline ? 'border-red-500/50' : 'border-slate-800'} bg-gradient-to-br from-slate-900 to-slate-900/40 p-6 shadow-xl transition-colors md:p-8 xl:p-10`}
                             >
                                 <div className="mb-4 flex items-center justify-between">
-                                    <h2 className="text-lg font-bold tracking-wide text-slate-200">MIC {index + 1}</h2>
-                                    <AudioLines className={isOverThreshold && !isOffline ? 'text-red-500' : 'text-cyan-300'} size={22} />
+                                    <h2 className="text-xl md:text-2xl xl:text-3xl font-bold tracking-wide text-slate-200">MIC {index + 1}</h2>
+                                    <AudioLines className={isOverThreshold && !isOffline ? 'text-red-500' : 'text-cyan-300'} size={32} />
                                 </div>
 
-                                <div className={`mt-5 text-5xl font-black ${valueColor}`}>
+                                <div className={`mt-6 text-7xl md:text-[5.5rem] xl:text-[7rem] font-black ${valueColor}`}>
                                     {isOffline ? (
                                         'OFFLINE'
                                     ) : (
@@ -307,7 +306,7 @@ export default function VibeControl() {
                                     )}
                                 </div>
 
-                                <div className="mt-5 text-sm text-slate-400">
+                                <div className="mt-auto pt-6 text-sm md:text-base xl:text-lg text-slate-400">
                                     <div>
                                         Updated:{' '}
                                         {item.updatedAt
