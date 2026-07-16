@@ -13,6 +13,10 @@ export default function App() {
   const LONGITUDE = 100.5018;
   // --- MQTT STATE ---
   const [localRainRate, setLocalRainRate] = useState(null); 
+  const [rainPresenceScore, setRainPresenceScore] = useState(0);
+  const [lastRainValue, setLastRainValue] = useState(null);
+  const [lastRainIncreaseAt, setLastRainIncreaseAt] = useState(null);
+  const [tick, setTick] = useState(Date.now());
   const [localTemp, setLocalTemp] = useState(null);
   const [localHumid, setLocalHumid] = useState(null);
 
@@ -40,6 +44,7 @@ export default function App() {
     // 1. Fetch API Weather Immediately & Set Interval
     fetchWeather();
     const intervalId = setInterval(fetchWeather, 300000);
+    const tickId = setInterval(() => setTick(Date.now()), 30000);
 
     // 2. Connect to Local MQTT Broker via WebSockets
     // Note: We use port 9001, which we just configured for WebSockets
@@ -63,7 +68,35 @@ export default function App() {
           const payload = JSON.parse(message.toString());
           
           // 3. Extract the specific data points
-          if (payload.rain_rate !== undefined) setLocalRainRate(payload.rain_rate);
+          if (payload.rain_rate !== undefined) {
+            const rainRate = Number(payload.rain_rate);
+            if (!Number.isNaN(rainRate)) setLocalRainRate(rainRate);
+          }
+
+          if (payload.rain !== undefined) {
+            const rainPresence = Number(payload.rain);
+            const rainValue = Number.isNaN(rainPresence) ? 0 : Math.max(0, Math.min(100, rainPresence));
+
+            if (rainValue > 0) {
+              setRainPresenceScore(rainValue / 100);
+              setLastRainValue((prev) => {
+                const previous = prev ?? -1;
+
+                if (rainValue > previous) {
+                  setLastRainIncreaseAt(Date.now());
+                } else if (prev === null) {
+                  setLastRainIncreaseAt(Date.now());
+                }
+
+                return rainValue;
+              });
+            } else {
+              setRainPresenceScore(0);
+              setLastRainValue(0);
+              setLastRainIncreaseAt(null);
+            }
+          }
+
           if (payload.temp !== undefined) setLocalTemp(payload.temp);
           if (payload.humid !== undefined) setLocalHumid(payload.humid);
           
@@ -76,13 +109,25 @@ export default function App() {
     // Cleanup when component unmounts
     return () => {
       clearInterval(intervalId);
+      clearInterval(tickId);
       client.end();
     };
   }, []);
 
-  const getWeatherInterpretation = (currentData, isCurrentlyRainingLocal) => {
-    // Priority 1: If the local MQTT sensor says it's raining, we force the UI to show RAIN
-    if (isCurrentlyRainingLocal) return { text: 'RAINING (LIVE)', icon: CloudRain, type: 'rain' };
+  const getWeatherInterpretation = (currentData, rainRate, rainPresenceScoreValue) => {
+    // Priority 1: If rain_rate is available, use the actual intensity.
+    if (rainRate !== null && rainRate > 0) {
+      if (rainRate < 1) {
+        return { text: 'RAINING', note: 'POSSIBLE TO GO OUTSIDE', icon: CloudRain, type: 'rain' };
+      }
+      if (rainRate < 15) {
+        return { text: 'HEAVY RAIN', note: 'SHOULD NOT GO OUTSIDE', icon: CloudRain, type: 'rain' };
+      }
+      return { text: 'THUNDERSTORM', note: 'DANGEROUS CONDITIONS', icon: CloudRain, type: 'rain' };
+    }
+
+    // Priority 2: Only fall back to rain when rain_rate cannot capture it.
+    if (rainPresenceScoreValue > 0) return { text: 'DRIZZLING RAIN', note: 'RAIN RATE UNAVAILABLE', icon: CloudRain, type: 'rain' };
 
     // // Priority 2: Fallback to the Open-Meteo API data if MQTT isn't detecting rain
     // if (currentData.snowfall > 0) return { text: 'SNOWING', icon: Snowflake, type: 'snow' };
@@ -128,11 +173,15 @@ export default function App() {
   }
   const { current, hourly } = weatherData;
   // --- CORE LOGIC: MQTT OVERRIDE ---
-  // If localRainRate > 0, we trust the sensor. Otherwise, we trust the API.
-  const isRainingLocally = localRainRate !== null && localRainRate > 0;
+  // If localRainRate > 0, we trust rain_rate. Otherwise, we use rain only as fallback.
+  const rainFallbackFresh = rainPresenceScore > 0
+    && lastRainIncreaseAt !== null
+    && (tick - lastRainIncreaseAt) < (10 * 60 * 1000);
+  const rainDetected = rainFallbackFresh;
+  const isRainingLocally = (localRainRate !== null && localRainRate > 0) || rainDetected;
   
   // We pass the local rain status to the interpretation function so it can override the icon/text
-  const condition = getWeatherInterpretation(current, isRainingLocally);
+  const condition = getWeatherInterpretation(current, localRainRate, rainPresenceScore);
   
   // The final boolean determining the screen color (Blue vs Green)
   const isRaining = isRainingLocally || current.precipitation > 0 ;
@@ -159,7 +208,7 @@ return (
               <span className="text-emerald-500 flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></div> MQTT ACTIVE</span>
             ) : (
               <span className="text-amber-500 flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-amber-500"></div> WAITING FOR SENSOR</span>
-            )}
+            )} 
           </div>
           <div className="flex items-center gap-2">
             <Clock size={24} />
@@ -180,12 +229,17 @@ return (
           <h1 className={`text-7xl xl:text-8xl 2xl:text-[140px] font-black tracking-tighter leading-none mb-8 text-center ${isRaining ? 'text-blue-100' : 'text-emerald-100'}`}>
             {condition.text}
           </h1>
+
+          {condition.note && (
+            <div className={`text-lg xl:text-2xl font-bold tracking-[0.35em] uppercase mb-4 ${isRaining ? 'text-blue-200/90' : 'text-emerald-200/90'}`}>
+              {condition.note}
+            </div>
+          )}
           
           {isRainingLocally ? (
             <div className="text-5xl xl:text-7xl font-bold text-blue-300 bg-blue-950/50 px-12 py-6 rounded-full mt-4 flex items-center gap-4 shadow-inner">
                <Droplets size={70} />
-               {displayedRainRate} mm/h
-               {isRainingLocally && <span className="text-2xl text-blue-500 ml-4 font-black tracking-widest uppercase">(Live)</span>}
+               {localRainRate !== null && localRainRate > 0 ? `${displayedRainRate} mm/h` : 'Drizzling rain'}
             </div>
           ) : (
             <div className="text-4xl xl:text-6xl font-bold text-emerald-400/80 bg-emerald-950/50 px-12 py-6 rounded-full mt-4 shadow-inner">
