@@ -22,6 +22,7 @@ createRoot(document.getElementById('root')).render(
         <Route path="/" element={<LinkTree />} />
         <Route path="/weather" element={<App />} />
         <Route path="/vibe" element={<VibeControl />} />
+
       </Routes>
     </BrowserRouter>
   </StrictMode>,

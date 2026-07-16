@@ -5,7 +5,9 @@ export default function useVibeRedirect() {
     const navigate = useNavigate();
     const location = useLocation();
     const currentPath = useRef(location.pathname);
-    const redirectDisabled = new URLSearchParams(location.search).get('redirect') === 'false';
+    const searchParams = new URLSearchParams(location.search);
+    const redirectDisabled = searchParams.get('redirect') === 'false';
+    const redirectTime = Number(searchParams.get('redirectTime') || 60000);
     const isRedirectScope = location.pathname.startsWith('/weather') || location.pathname.startsWith('/vibe');
 
     useEffect(() => {
@@ -19,11 +21,11 @@ export default function useVibeRedirect() {
 
         const intervalId = setInterval(() => {
             const isOnVibePage = currentPath.current.startsWith('/vibe');
-            navigate(isOnVibePage ? '/weather' : '/vibe');
-        }, 10000);
+            navigate(isOnVibePage ? `/weather?redirectTime=${redirectTime}` : `/vibe?redirectTime=${redirectTime}`);
+        }, redirectTime);
 
         return () => {
             clearInterval(intervalId);
         };
-    }, [navigate, redirectDisabled, isRedirectScope]);
+    }, [navigate, redirectDisabled, isRedirectScope, redirectTime]);
 }

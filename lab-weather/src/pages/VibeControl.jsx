@@ -229,12 +229,7 @@ export default function VibeControl() {
                             {status === 'connected' ? <Radio size={20} /> : <WifiOff size={20} />}
                             <span>MQTT: {status.toUpperCase()}</span>
                         </div>
-                        <Link
-                            to="/"
-                            className="rounded-full border border-slate-700 px-5 py-3 text-base font-semibold text-slate-200 hover:bg-slate-800 md:text-lg"
-                        >
-                            Back to Weather
-                        </Link>
+
                     </div>
                 </header>
 
@@ -323,6 +318,8 @@ export default function VibeControl() {
                     })}
                 </div>
             </div>
+
         </div>
+
     );
 }
